@@ -166,9 +166,9 @@ public:
 		// uint64_t* bit_vector;
 		// uint64_t* dirty_vector;
 
-		// 测试一下写死会不会规避一些问题,似乎能规避一些问题，但是还是原来的问题
-		uint64_t bit_vector[64];
-		uint64_t dirty_vector[64];
+		// 测试一下写死会不会规避一些问题,似乎能规避一些问题，但是还是原来的问题    修改这里，page大小/粒度
+		uint64_t bit_vector[4];  //uint64_t bit_vector[64];  //64B cacheline粒度
+		uint64_t dirty_vector[4];  //uint64_t dirty_vector[64];   //64B cacheline粒度
 
 		// int bit_vector[hybrid2_blk_per_page];
 		// int dirty_vector[hybrid2_blk_per_page];

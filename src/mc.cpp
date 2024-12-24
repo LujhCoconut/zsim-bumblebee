@@ -906,8 +906,12 @@ MemoryController::hybrid2_access(MemReq& req)
 	assert(_scheme == Hybrid2);
 	// futex_lock(&_lock);
 	// std::cout << std::hex << "vaddr:   0x" << req.lineAddr << std::endl;
-	Address tmpAddr = req.lineAddr;
-	req.lineAddr = vaddr_to_paddr(req);
+	Address tmpAddr = req.lineAddr;   //虚拟的cacheline地址
+	Address blockAddr=(tmpAddr/_hybrid2_blk_size)*_hybrid2_blk_size;  //对应block起始地址
+	Address cachelineAddr=(tmpAddr/64)*64; //cacheline的起始地址
+	const uint64_t  real_block_size=1024;  //改，将粒度调整
+	const uint64_t block_ratio=  real_block_size/64;
+	req.lineAddr = vaddr_to_paddr(req);  //真实地址，判断位于哪个介质
 	// std::cout << std::hex << "vaddr to paddr:   0x" <<  req.lineAddr << std::endl;
 	switch (req.type) {
         case PUTS:
@@ -938,9 +942,9 @@ MemoryController::hybrid2_access(MemReq& req)
 	// uint32_t cache_hbm_select = (address / 64) % _cache_hbm_per_mc;
 	// Address cache_hbm_address = (address / 64 /_cache_hbm_per_mc * 64) | (address % 64); 
 	assert(0 != _cache_hbm_per_mc);
-	uint32_t mem_hbm_select = (address / 64) % _cache_hbm_per_mc;
+	uint32_t mem_hbm_select = (address / _hybrid2_blk_size) % _cache_hbm_per_mc;
 	// assert(4 > mem_hbm_select);
-	Address mem_hbm_address = (address / 64 /_cache_hbm_per_mc * 64) | (address % 64); 
+	Address mem_hbm_address = (address / _hybrid2_blk_size /_cache_hbm_per_mc * _hybrid2_blk_size) | (address % _hybrid2_blk_size);  //这里需要修改吗？
 
 	// address在哪一个page，在page第几个block
 	// 保证内存对齐
@@ -950,7 +954,7 @@ MemoryController::hybrid2_access(MemReq& req)
 	// uint64_t blk_offset = (address - page_addr*_hybrid2_page_size) / _hybrid2_blk_size;
 	// 先计算页内偏移再按block对齐
 	// uint64_t blk_addr = ((address % _hybrid2_page_size) / _hybrid2_blk_size) * _hybrid2_blk_size; 
-	uint64_t blk_offset = (address % _hybrid2_page_size) / _hybrid2_blk_size;
+	uint64_t blk_offset = (address % _hybrid2_page_size) / _hybrid2_blk_size; // block在page内的偏移位置
 	// std::cout << "blk_offset ==" << blk_offset << std::endl;
 
 	// 根据程序的执行流，先访问XTA
@@ -1003,12 +1007,14 @@ MemoryController::hybrid2_access(MemReq& req)
 			{
 				// std::cout << "exist[" << exist << "]workflow come here :(Cacheline Hit)!" << std::endl;
 				// 访问HBM,TODO
+
 				if(type == STORE)
 				{
 					// 这一步实际上涉及到了内存交织,在这里访问cacheHBM还是memHBM没有区别
 					req.lineAddr = mem_hbm_address;
-					// 第三个参数怎么设置，没想好，TODO
-					req.cycle = _mcdram[mem_hbm_select]->access(req,0,6);
+					// 第三个参数怎么设置，没想好，TODO 
+					req.cycle = _mcdram[mem_hbm_select]->access(req,0,4);    //0是访问类型，4是考虑burst_lenth
+
 					// req.lineAddr = address;
 					req.lineAddr = tmpAddr;
 					total_latency += req.cycle;
@@ -1035,13 +1041,15 @@ MemoryController::hybrid2_access(MemReq& req)
 				// 有可能是dram,有可能remap到hbm
 				if(address >= _mem_hbm_size)
 				{
+					Address blk_address = address / _hybrid2_blk_size;   //这个是cacheline
+					
 					//检查DRAMTable有没有存映射
-					auto it = DRAMTable.find(address);
+					auto it = DRAMTable.find(blk_address);
 					if(it == DRAMTable.end())
 					{
 						// assert(it != DRAMTable.end());
-						// 访问DRAM,TODO
-						req.cycle = _ext_dram->access(req,0,4);
+						// 访问DRAM,TODO 
+						req.cycle = _ext_dram->access(req,0,4*block_ratio);    //zsy改，原版本无block_ratio
 						req.lineAddr = tmpAddr;
 						total_latency += req.cycle;
 						// std::cout << "workflow over here (XTA Hit ,is dram)!!" << std::endl;
@@ -1051,8 +1059,8 @@ MemoryController::hybrid2_access(MemReq& req)
 						// 访问HBM,TODO
 						uint64_t dest_address = it->second;
 						
-						uint64_t dest_hbm_mc_address = (dest_address / 64 / _mem_hbm_per_mc * 64) | (dest_address % 64); 
-						uint64_t dest_hbm_select = (dest_address / 64) % _mem_hbm_per_mc;
+						uint64_t dest_hbm_mc_address = (dest_address / _hybrid2_blk_size / _mem_hbm_per_mc * _hybrid2_blk_size) | (dest_address % _hybrid2_blk_size); 
+						uint64_t dest_hbm_select = (dest_address / _hybrid2_blk_size) % _mem_hbm_per_mc;
 						req.lineAddr = dest_hbm_mc_address;
 						req.cycle =  _mcdram[dest_hbm_select]->access(req,0,4);
 						// req.lineAddr = address;
@@ -1063,7 +1071,8 @@ MemoryController::hybrid2_access(MemReq& req)
 						return total_latency;
 					}
 				}else{// 否则有可能是HBM,但也有可能是remap到DRAM   
-					auto it = HBMTable.find(address);
+					Address blk_address = address / _hybrid2_blk_size;
+					auto it = HBMTable.find(blk_address);
 					if(it == HBMTable.end())
 					{
 						// 访问HBM，TODO
@@ -1079,7 +1088,7 @@ MemoryController::hybrid2_access(MemReq& req)
 						uint64_t dest_address = it->second;
 						// 访问DRAM,TODO
 						req.lineAddr = dest_address;
-						req.cycle = _ext_dram->access(req,0,4);
+						req.cycle = _ext_dram->access(req,0,4*block_ratio);
 						total_latency += req.cycle;
 						// req.lineAddr = address;
 						req.lineAddr = tmpAddr;
@@ -1136,6 +1145,7 @@ MemoryController::hybrid2_access(MemReq& req)
 			// 是否迁移或逐出
 			// 这一段是可能原来就在DRAM，或者被remap进HBM的部分
 			// remap进HBM的部分，要是这部分数据不太热就踢出去
+			//热度最低的页面才踢？如何踢
 			if(address >= _mem_hbm_size)
 			{
 				migrate_init_dram = true;
@@ -1149,12 +1159,14 @@ MemoryController::hybrid2_access(MemReq& req)
 				// 如果迁移代价不高且原来就在DRAM里，就迁移
 				if(migrate_init_dram && heat_counter > net_cost)
 				{
+					Address blk_address = address / _hybrid2_blk_size;   //改，其实也会修改
 					// 一直就在DRAM就加个映射
 					// 依然是基于ZSim只需要返回延迟的假设,如果有对应的hbm_tag，不管DRAMTable有没有是不是，都改成新的映射
-					if(tmp_hbm_tag != static_cast<uint64_t>(0)){
-						DRAMTable[address] = tmp_hbm_tag * _hybrid2_page_size + blk_offset;
+					if(tmp_hbm_tag != static_cast<uint64_t>(0)){  //改，需要更改迁移之后的数据
+
+						DRAMTable[blk_address] = tmp_hbm_tag * _hybrid2_page_size + blk_offset;
 					}else{ // 否则按照地址均匀的方式，按地址%mem_hbm_size 映射
-						DRAMTable[address] = address % _mem_hbm_size;
+						DRAMTable[blk_address] = address % _mem_hbm_size / _hybrid2_blk_size;
 					}
 				}
 
@@ -1164,8 +1176,9 @@ MemoryController::hybrid2_access(MemReq& req)
 					// 可能是被映射进HBM的
 					if(migrate_final_hbm)
 					{
+						Address blk_address = address / _hybrid2_blk_size;
 						// 解除映射
-						DRAMTable.erase(address);
+						DRAMTable.erase(blk_address);
 					}// 否则什么也不用做
 				}
 
@@ -1177,7 +1190,8 @@ MemoryController::hybrid2_access(MemReq& req)
 			if(address < _mem_hbm_size)
 			{
 				migrate_init_hbm = true;
-				auto it = HBMTable.find(address);
+				Address blk_address = address / _hybrid2_blk_size;
+				auto it = HBMTable.find(blk_address);
 				if(it != HBMTable.end())
 				{
 					migrate_init_hbm = false;
@@ -1189,16 +1203,16 @@ MemoryController::hybrid2_access(MemReq& req)
 				{
 					// 映射到DRAM,不管有没有是不是，都更新成新映射；
 					if(tmp_dram_tag != static_cast<uint64_t>(0)){
-						HBMTable[address] = tmp_dram_tag * _hybrid2_page_size + blk_offset;
+						HBMTable[blk_address] = tmp_dram_tag * _hybrid2_page_size + blk_offset;
 					}else{ // 否则按照地址，简单生成一个
-						HBMTable[address] = address + (address % 7 + 1) * _mem_hbm_size;
+						HBMTable[blk_address] = address + (address % 7 + 1) * _mem_hbm_size / _hybrid2_blk_size;
 					}
 				}
 
 				// 温热数据就留在HBM了
 				if(migrate_final_dram && heat_counter >= avg_temp)
 				{
-					HBMTable.erase(address);
+					HBMTable.erase(blk_address);
 				}
 				
 			}
@@ -1247,7 +1261,8 @@ MemoryController::hybrid2_access(MemReq& req)
 				dest_blk_address = address;
 				is_dram = true;
 				// 看看有没有remap，有就更新，没有就不更新
-				auto it = DRAMTable.find(address);
+				Address blk_address = address / _hybrid2_blk_size;
+				auto it = DRAMTable.find(blk_address);
 				if(it != DRAMTable.end()) // 就说明有对吧
 				{
 					SETEntries[empty_idx]._hbm_tag = get_page_id(it->second);
@@ -1279,8 +1294,8 @@ MemoryController::hybrid2_access(MemReq& req)
 				// 访问HBM,TODO
 				assert(static_cast<uint64_t>(0) != dest_blk_address);
 				
-				uint64_t dest_hbm_mc_address = (dest_blk_address / 64 / _mem_hbm_per_mc * 64) | (dest_blk_address % 64); 
-				uint64_t dest_hbm_select = (dest_blk_address / 64) % _mem_hbm_per_mc;
+				uint64_t dest_hbm_mc_address = (dest_blk_address / _hybrid2_blk_size / _mem_hbm_per_mc * _hybrid2_blk_size) | (dest_blk_address % _hybrid2_blk_size); 
+				uint64_t dest_hbm_select = (dest_blk_address / _hybrid2_blk_size) % _mem_hbm_per_mc;
 				req.lineAddr = dest_hbm_mc_address;
 				req.cycle =  _mcdram[dest_hbm_select]->access(req,0,4);
 
@@ -1301,7 +1316,7 @@ MemoryController::hybrid2_access(MemReq& req)
 				// 访问DRAM,TODO
 				assert(static_cast<uint64_t>(0) != dest_blk_address);
 				req.lineAddr = dest_blk_address;
-				req.cycle = _ext_dram->access(req,0,4);
+				req.cycle = _ext_dram->access(req,0,4*block_ratio);
 				// req.lineAddr = address;
 				req.lineAddr = tmpAddr;
 				total_latency += req.cycle;

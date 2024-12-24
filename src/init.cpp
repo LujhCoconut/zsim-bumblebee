@@ -76,6 +76,9 @@
 #include "mc.h"
 #include "zsim.h"
 
+#include <iostream>
+#include <exception>
+
 extern void EndOfPhaseActions(); //in zsim.cpp
 
 /* zsim should be initialized in a deterministic and logical order, to avoid re-reading config vars
@@ -304,10 +307,12 @@ DDRMemory* BuildDDRMemory(Config& config, uint32_t lineSize, uint32_t frequency,
     uint32_t ranksPerChannel = config.get<uint32_t>(prefix + "ranksPerChannel", 4);
     uint32_t banksPerRank = config.get<uint32_t>(prefix + "banksPerRank", 8);  // DDR3 std is 8
     uint32_t pageSize = config.get<uint32_t>(prefix + "pageSize", 8*1024);  // 1Kb cols, x4 devices
+    // 指定内存技术
     const char* tech = config.get<const char*>(prefix + "tech", "DDR3-1333-CL10");  // see cpp file for other techs
     const char* addrMapping = config.get<const char*>(prefix + "addrMapping", "rank:col:bank");  // address splitter interleaves channels; row always on top
 
     // If set, writes are deferred and bursted out to reduce WTR overheads
+    //HBM设置defer writes，DDR设置closed page进行对比
     bool deferWrites = config.get<bool>(prefix + "deferWrites", true);
     bool closedPage = config.get<bool>(prefix + "closedPage", true);
 
@@ -335,7 +340,8 @@ MemObject* BuildMemoryController(Config& config, uint32_t lineSize, uint32_t fre
     if (type == "Simple") {
         mem = new SimpleMemory(latency, name, config);
     } else if (type == "DramCache") {
-		mem = new MemoryController(name, frequency, domain, config);	
+		mem = new MemoryController(name, frequency, domain, config);
+        
 	} else if (type == "MD1") {
         // The following params are for MD1 only
         // NOTE: Frequency (in MHz) -- note this is a sys parameter (not sys.mem). There is an implicit assumption of having
@@ -794,14 +800,18 @@ static void PostInitStats(bool perProcessDir, Config& config) {
     zinfo->rootStat->makeImmutable();
     zinfo->trigger = 15000;
 
-    string pathStr = zinfo->outputDir;
+    // string pathStr = zinfo->outputDir;
+    string pathStr = config.get<const char*>("sim.outputDir", zinfo->outputDir);
+    string testCase = config.get<const char*>("sim.testCase", "");
     pathStr += "/";
 
+    
+
     // Absolute paths for stats files. Note these must be in the global heap.
-    const char* pStatsFile = gm_strdup((pathStr + "zsim.h5").c_str());
-    const char* evStatsFile = gm_strdup((pathStr + "zsim-ev.h5").c_str());
-    const char* cmpStatsFile = gm_strdup((pathStr + "zsim-cmp.h5").c_str());
-    const char* statsFile = gm_strdup((pathStr + "zsim.out").c_str());
+    const char* pStatsFile = gm_strdup((pathStr + testCase + "zsim.h5").c_str());
+    const char* evStatsFile = gm_strdup((pathStr + testCase + "zsim-ev.h5").c_str());
+    const char* cmpStatsFile = gm_strdup((pathStr + testCase + "zsim-cmp.h5").c_str());
+    const char* statsFile = gm_strdup((pathStr + testCase + "zsim.out").c_str());
 
     if (zinfo->statsPhaseInterval) {
         const char* periodicStatsFilter = config.get<const char*>("sim.periodicStatsFilter", "");
@@ -866,6 +876,7 @@ static void InitGlobalStats() {
 
 
 void SimInit(const char* configFile, const char* outputDir, uint32_t shmid) {
+    // std::cout << "shmid " << shmid << std::endl;
     zinfo = gm_calloc<GlobSimInfo>();
     zinfo->outputDir = gm_strdup(outputDir);
     zinfo->statsBackends = new g_vector<StatsBackend*>();
@@ -980,6 +991,12 @@ void SimInit(const char* configFile, const char* outputDir, uint32_t shmid) {
     //NOTE: Due to partitioning, must be done before initializing memory hierarchy
     CreateProcessTree(config);
     zinfo->procArray[0]->notifyStart(); //called here so that we can detect end-before-start races
+    
+    // Set Global memory
+    // uint32_t gmSize = config.get<uint32_t>("sim.gmMBytes", (1<<10) /*default 1024MB*/);
+    // info("Creating global segment, %d MBs", gmSize);
+    // int shmid_new = gm_init(((size_t)gmSize) << 20 /*MB to Bytes*/);
+    // std::cout << "shmid new " << shmid_new << std::endl;
 
     zinfo->pinCmd = new PinCmd(&config, nullptr /*don't pass config file to children --- can go either way, it's optional*/, outputDir, shmid);
 
@@ -1017,6 +1034,7 @@ void SimInit(const char* configFile, const char* outputDir, uint32_t shmid) {
     //HACK: Read all variables that are read in the harness but not in init
     //This avoids warnings on those elements
     config.get<uint32_t>("sim.gmMBytes", (1 << 10));
+    // gmMBBytes搭配gm_init()使用
     if (!zinfo->attachDebugger) config.get<bool>("sim.deadlockDetection", true);
     config.get<bool>("sim.aslr", false);
 

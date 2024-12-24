@@ -145,12 +145,23 @@ def buildSim(cppFlags, dir, type, pgo=None):
 
     # Only include DRAMSim if available
     if "DRAMSIMPATH" in os.environ:
+        # DRAMSIMPATH = os.environ["DRAMSIMPATH"]
         DRAMSIMPATH = os.environ["DRAMSIMPATH"]
         env["LINKFLAGS"] += " -Wl,-R" + DRAMSIMPATH
         env["PINLIBPATH"] += [DRAMSIMPATH]
-        env["CPPPATH"] += [DRAMSIMPATH]
+        env["CPPPATH"] += [DRAMSIMPATH + "/src"]
         env["PINLIBS"] += ["dramsim"]
         env["CPPFLAGS"] += " -D_WITH_DRAMSIM_=1 "
+        env["LIBPATH"] += [joinpath(DRAMSIMPATH)]
+
+    #     # Only include DRAMSim if available
+    # if "DRAMSIMPATH" in os.environ:
+    #     DRAMSIMPATH = os.environ["DRAMSIMPATH"]
+    #     env["LINKFLAGS"] += " -Wl,-R" + DRAMSIMPATH
+    #     env["PINLIBPATH"] += [DRAMSIMPATH]
+    #     env["CPPPATH"] += [DRAMSIMPATH]
+    #     env["PINLIBS"] += ["dramsim"]
+    #     env["CPPFLAGS"] += " -D_WITH_DRAMSIM_=1 "
 
     env["CPPPATH"] += ["."]
 

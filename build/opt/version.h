@@ -1,2 +1,2 @@
-#define ZSIM_BUILDDATE "2024年 11月 14日 星期四 14:50:13 CST"
-#define ZSIM_BUILDVERSION "master:8:b86fba7:182fc 45127+ 2340- e5b3a279"
+#define ZSIM_BUILDDATE "2024年 12月 13日 星期五 17:04:34 CST"
+#define ZSIM_BUILDVERSION "main:15:897d969:88fc 944+ 120- eaf40e7f"

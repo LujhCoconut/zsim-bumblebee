@@ -781,6 +781,21 @@ void DDRMemory::initTech(const char* techName, double time_scale) {
         tWR = uint32_t( 10 / time_scale);
         tRFC = uint32_t( 74 / time_scale);
         tREFI = uint32_t( 5200 / time_scale);
+    } else if (tech == "DDR3-1333-CL10-2") {
+        // from DRAMSim2/ini/DDR3_micron_16M_8B_x4_sg15.ini (Micron)
+        tCK = 1.5 / 2;  // ns; all other in mem cycles
+        tBL = 4;
+        tCL = uint32_t(8 / time_scale);
+        tRCD = uint32_t( 8 / time_scale);
+        tRTP = uint32_t( 4 / time_scale);
+        tRP = uint32_t( 8 / time_scale);
+        tRRD = uint32_t( 3 / time_scale);
+        tRAS = uint32_t( 20 / time_scale);
+        tFAW = uint32_t( 16 / time_scale);
+        tWTR = uint32_t( 4/ time_scale);
+        tWR = uint32_t( 8 / time_scale);
+        tRFC = uint32_t( 60 / time_scale);
+        tREFI = uint32_t( 4000 / time_scale);
     } else if (tech == "DDR3-1066-CL7") {
         // from DDR3_micron_16M_8B_x4_sg187.ini
         // see http://download.micron.com/pdf/datasheets/dram/ddr3/1Gb_DDR3_SDRAM.pdf, cl7 variant, copied from it; tRRD is widely different, others match
