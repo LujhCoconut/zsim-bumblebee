@@ -30,6 +30,8 @@ enum Scheme
    Tagless,
    Hybrid2,
    Chameleon,
+   Bumblebee,
+   CacheMode
 };
 
 class Way
@@ -303,11 +305,12 @@ public:
 			else return true;
 		}
 
-		bool setSegmentBusy(int segment,bool value)
-		{
-			ABV[segment]=value;
-			return;
-		}
+		// bool setSegmentBusy(int segment,bool value)
+		// {
+		// 	ABV[segment]=value;
+		// 	//
+		// 	return true;
+		// }
 
 	};
 
@@ -417,7 +420,7 @@ public:
 
 	// 一个set 一个HotnessTracker
 	g_vector<HotnenssTracker> HotnessTable;
-
+	Address getDestAddress(uint64_t set_id,int idx,int page_offset,int blk_offset);
 	void tryEvict(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle);
 
 
@@ -466,6 +469,7 @@ private:
 	// Balance in- and off-package DRAM bandwidth. 
 	// From "BATMAN: Maximizing Bandwidth Utilization of Hybrid Memory Systems"
 	bool _bw_balance; 
+	// 小于ds_index的cache（HBM）则被标记为disable，未被使用
 	uint64_t _ds_index;
 
 	// TLB Hack
