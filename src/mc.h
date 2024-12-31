@@ -171,7 +171,6 @@ public:
 		// uint64_t* bit_vector;
 		// uint64_t* dirty_vector;
 
-		// 测试一下写死会不会规避一些问题,似乎能规避一些问题，但是还是原来的问题    修改在这里为4kB/粒度
 		uint64_t bit_vector[64];
 		uint64_t dirty_vector[64];
 
@@ -204,11 +203,7 @@ public:
 
 
 	// 迁移映射表
-	// 假设Workflow是[ XTAHit-Cacheline Miss]
-	// 先查一边哈希表，没有直接根据地址范围判断介质，有的话根据哈希表返回地址判断介质
-	// 再返回延迟。
-	// 这个MTable是否要设置容量呢？不用，根据内存访问erase没用的应该就行
-	// 需要更仔细地考虑合理性
+	// 将元素从cacheline地址修改为page地址 update[2024/12/30]
 	g_unordered_map<uint64_t,uint64_t> HBMTable;
 	g_unordered_map<uint64_t,uint64_t> DRAMTable;
 
@@ -230,9 +225,7 @@ public:
 	g_unordered_map<uint64_t,uint64_t> fixedMapping;
 
 	
-
-
-	// ----------------------------------------------------------
+    // ----------------------------------------------------------
 	// Chameleon[MICRO'18] Reproduce
 	// some parameters using the same parameters in hybrid2'
 	uint32_t _chameleon_blk_size;
@@ -321,11 +314,12 @@ public:
 
 	// ----------------------------------------------------------
 	// Bumblebee[DAC'23] Reproduce
-	const static int bumblebee_m = 80; // 取消const static时 请将下面结构体的构造函数取消，并在cpp中初始化
-	const static int bumblebee_n = 10; // paper n
+	const static int bumblebee_m = 128; // 取消const static时 请将下面结构体的构造函数取消，并在cpp中初始化
+	const static int bumblebee_n = 16; // paper n
 	int bumblebee_T; // paper T
 	uint32_t _bumblebee_page_size;
 	uint32_t _bumblebee_blk_size;
+	const static int hot_data = 10;
 
 	const static int blk_per_page = 64;
 
@@ -357,10 +351,12 @@ public:
 	// 如果大多数 HBM 页面表现出强空间局部性，则应将更多的片外页面迁移到 mHBM。
 	struct BLEEntry{
 		int ple_idx; // 可以索引到PLEEntry page-offset
+		int cntr;
+		uint64_t l_cycle;
 		g_vector<int> validVector;
 		g_vector<int> dirtyVector;
 
-		BLEEntry(int _ple_idx = -1):ple_idx(_ple_idx)
+		BLEEntry(int _ple_idx = -1,int _cntr = 0,uint64_t _l_cycle = 0):ple_idx(_ple_idx),cntr(_cntr),l_cycle(_l_cycle)
 		{
 			for(int i = 0 ;i < blk_per_page; i++)
 			{
@@ -371,9 +367,18 @@ public:
 	};
            
 	struct MetaGrpEntry{
-		g_vector<BLEEntry> _bleEntries;
+		g_vector<BLEEntry> _bleEntries; // 需要被初始化
 		PLEEntry _pleEntry;
 		// ......
+
+		MetaGrpEntry()
+		{
+			for(int i = 0;i < bumblebee_m + bumblebee_n;i++)
+			{
+				BLEEntry _bleEntry;
+				_bleEntries.push_back(_bleEntry);
+			}
+		}
 	};
 
 	g_vector<MetaGrpEntry> MetaGrp;
@@ -393,7 +398,7 @@ public:
 	// SL>0（强空间局部性），应将更多的热点数据迁移到 mHBM，以更好地利用空间局部性并充分利用内存带宽
 	// SL≤0（弱空间局部性），应将热点数据缓存到 cHBM，以减少过度预取的情况。
 
-	int rh_upper = 80; //Rh较高的超参数
+	int rh_upper = 60; //Rh较高的超参数
 	uint64_t long_time = 1000000; // 长时间的超参数
 
 
@@ -421,7 +426,7 @@ public:
 	// 一个set 一个HotnessTracker
 	g_vector<HotnenssTracker> HotnessTable;
 	Address getDestAddress(uint64_t set_id,int idx,int page_offset,int blk_offset);
-	void tryEvict(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle);
+	void tryEvict(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle,g_vector<BLEEntry>& bleEntries,uint64_t set_id,MemReq& req);
 
 
 	// ----------------------------------------------------------
