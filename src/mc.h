@@ -161,6 +161,9 @@ public:
 	uint64_t hbm_pages_per_set; 
 	// uint64_t dram
 
+	uint64_t chbm_miss_cntr = 0;
+	uint64_t cntr_last_cycle = 10;
+	const static int time_intv = 100000; //100K
 	uint32_t hybrid2_blk_per_page;
 	// Hybrid2论文的XTA
 	// 论文中包括缓存必要字段tag,LRUstate,有效标记，脏标记
@@ -329,7 +332,7 @@ public:
 		g_vector<int> Type; // 0:DRAM 1:mHBM 2:cHBM (only 1 & 2 are used)
 
 		// HBM is in the front of the set
-		// ple value can re multiple, cache should be considered first !!
+		// ple value can be multiple, cache should be considered first !!
 		PLEEntry()
 		{
 			for(int i = 0;i < (bumblebee_m + bumblebee_n);i++)
@@ -376,6 +379,7 @@ public:
 			for(int i = 0;i < bumblebee_m + bumblebee_n;i++)
 			{
 				BLEEntry _bleEntry;
+				_bleEntry.ple_idx = i; 
 				_bleEntries.push_back(_bleEntry);
 			}
 		}
@@ -398,8 +402,8 @@ public:
 	// SL>0（强空间局部性），应将更多的热点数据迁移到 mHBM，以更好地利用空间局部性并充分利用内存带宽
 	// SL≤0（弱空间局部性），应将热点数据缓存到 cHBM，以减少过度预取的情况。
 
-	int rh_upper = 60; //Rh较高的超参数
-	uint64_t long_time = 1000000; // 长时间的超参数
+	int rh_upper = 12; //Rh较高的超参数
+	uint64_t long_time = 100000; // 长时间的超参数
 
 
 
@@ -428,6 +432,19 @@ public:
 	Address getDestAddress(uint64_t set_id,int idx,int page_offset,int blk_offset);
 	void tryEvict(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle,g_vector<BLEEntry>& bleEntries,uint64_t set_id,MemReq& req);
 
+	// 缓存异步执行的迁移的队列
+	struct AsynReq{ //未设计初始化函数，使用此数据结构请务必正确初始化
+		MemReq _asynReq;
+		int type; // 交给哪一种内存介质进行处理 0->HBM 1->DDR
+		int channel_select; // 如果是HBM处理，需要的通道选择参数
+		int access_type; // 0 立即执行 1：关键路径稍后执行 2：非关键路径稍后执行
+	};
+
+	g_list<AsynReq> AsynReqQueue; // 尾部加入push_back 头部弹出pop_front
+	void execAsynReq(); // 每次Access完都会清空AsynReqQueue,解决了hanppens-before的问题
+	lock_t _AsynQueuelock; // 只有一个线程可以修改AsynReqQueue
+
+	void hotTrackerState(HotnenssTracker& hotTracker,PLEEntry& pleEntry);
 
 	// ----------------------------------------------------------
 
