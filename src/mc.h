@@ -5,10 +5,12 @@
 #include "g_std/g_string.h"
 #include "memory_hierarchy.h"
 #include <string>
+#include <iostream>
 #include "stats.h"
 #include "g_std/g_unordered_map.h"
 #include "g_std/g_vector.h"
 #include "g_std/g_list.h"
+#include <vector>
 // #include <unordered_map>
 
 #define MAX_STEPS 10000
@@ -33,6 +35,7 @@ enum Scheme
    Bumblebee,
    CacheMode,
    DirectFlat,
+   DCache, // Our proposed
    BATMAN
 };
 
@@ -122,6 +125,7 @@ private:
 
 	// Trace related code
 	lock_t _lock;
+	lock_t _remap_lock;
 	bool _collect_trace;
 	g_string _trace_dir;
 	Address _address_trace[10000];
@@ -138,6 +142,10 @@ public:
 	MemObject ** _mcdram;
 	uint32_t _mcdram_per_mc;
 	g_string _mcdram_type;
+
+	// test flat access
+	g_vector<uint64_t> _flat_access_cntr;
+	uint64_t _flat_access_print_time = 0;
 	// ----------------------------------------------------------
 	//Hybrid2[HPCA'20] Reproduce
 	// DDRMemory * test_mem;
@@ -319,7 +327,9 @@ public:
 	int get_segment_num(Address addr); // hbm 0; ddr 1 - n;
 	
 
-    /* -----------------------End DCache--------------------------- */
+	// add by RL
+	uint64_t global_memory_size;
+
 
 
 	// ----------------------------------------------------------
@@ -497,7 +507,7 @@ public:
 	// 一个set 一个HotnessTracker
 	g_vector<HotnenssTracker> HotnessTable;
 	Address getDestAddress(uint64_t set_id,int idx,int page_offset,int blk_offset);
-	void tryEvict(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle,g_vector<BLEEntry>& bleEntries,uint64_t set_id,MemReq& req);
+	void tryEvict(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle,g_vector<BLEEntry>& bleEntries,uint64_t set_id,MemReq& req,int sl_state);
 	void tryEvict_2(PLEEntry& pleEntry,HotnenssTracker& hotTracker,uint64_t current_cycle,g_vector<BLEEntry>& bleEntries,uint64_t set_id,MemReq& req);
 	void hotTrackerDecrease(HotnenssTracker& hotTracker,uint64_t current_cycle);
 

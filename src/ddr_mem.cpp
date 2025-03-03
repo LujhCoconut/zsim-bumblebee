@@ -308,6 +308,19 @@ uint64_t DDRMemory::access(MemReq& req, int type, uint32_t data_size) {
     }
 }
 
+uint64_t
+DDRMemory::rd_dram_tag_latency(MemReq& req, uint32_t data_size)
+{
+    return std::log2(int(minRdLatency + memToSysCycle(data_size - 1)));
+}
+
+uint64_t
+DDRMemory::wt_dram_tag_latency(MemReq& req, uint32_t data_size)
+{
+    return std::log2(int(minWrLatency + memToSysCycle(data_size - 1)));
+}
+
+
 /* Weave phase functionality */
 
 //Address mapping:
